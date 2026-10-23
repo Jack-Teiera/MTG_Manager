@@ -1,0 +1,1373 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MTG Collection Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .autocomplete-items {
+            position: absolute; border: 1px solid #d4d4d8; border-bottom: none; border-top: none; 
+            z-index: 50; top: 100%; left: 0; right: 0; background-color: white; max-height: 200px; overflow-y: auto;
+        }
+        .autocomplete-items div { padding: 10px; cursor: pointer; border-bottom: 1px solid #d4d4d8; }
+        .autocomplete-items div:hover { background-color: #e4e4e7; }
+        .tab-active { border-bottom: 2px solid #4f46e5; color: #4f46e5; font-weight: bold; }
+        .tab-inactive { color: #6b7280; }
+        .tab-inactive:hover { color: #374151; }
+        
+        @keyframes fadeinout {
+            0% { bottom: 0; opacity: 0; }
+            10% { bottom: 30px; opacity: 1; }
+            90% { bottom: 30px; opacity: 1; }
+            100% { bottom: 0; opacity: 0; }
+        }
+        .toast-show { animation: fadeinout 3s forwards; }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans text-gray-800">
+
+    <!-- Hover Preview Box -->
+    <div id="hoverPreviewBox" class="fixed hidden z-50 pointer-events-none drop-shadow-2xl transition-opacity duration-75">
+        <img id="hoverPreviewImg" src="" class="rounded-xl w-64 h-auto border-2 border-gray-400 bg-white">
+    </div>
+
+    <!-- Modal Conferma Generale -->
+    <div id="confirmModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center">
+        <div class="bg-white p-6 rounded-lg shadow-xl w-96">
+            <h3 class="text-lg font-bold mb-4" id="confirmTitle">Conferma</h3>
+            <p class="text-gray-600 mb-6" id="confirmMessage">Sei sicuro?</p>
+            <div class="flex justify-end gap-3">
+                <button id="btnConfirmCancel" class="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 transition">Annulla</button>
+                <button id="btnConfirmOk" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition">Conferma</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Modifica Mazzi Multipli -->
+    <div id="editDeckModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center">
+        <div class="bg-white p-6 rounded-lg shadow-xl w-96">
+            <h3 class="text-lg font-bold mb-4">Modifica Mazzi & Comandante</h3>
+            <p class="text-sm text-gray-600 mb-4 font-bold" id="editDeckCardName">Nome Carta</p>
+            
+            <label class="block text-xs font-semibold text-gray-500 mb-1">Puoi inserire più mazzi separati da virgola</label>
+            <input list="deckOptionsModal" id="editDeckInput" class="w-full border border-gray-300 p-2 rounded mb-4 focus:ring-2 focus:ring-indigo-500" placeholder="Es. Commander 1, Modern Aggro">
+            <datalist id="deckOptionsModal"></datalist>
+
+            <label class="flex items-center gap-2 text-sm font-semibold text-gray-700 bg-indigo-50 p-2 rounded border border-indigo-200 mb-6 cursor-pointer hover:bg-indigo-100 transition">
+                <input type="checkbox" id="editDeckIsCommander" class="w-4 h-4 text-indigo-600 focus:ring-indigo-500">
+                Imposta come Comandante di questi mazzi
+            </label>
+
+            <div class="flex justify-end gap-3">
+                <button onclick="document.getElementById('editDeckModal').classList.add('hidden')" class="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 transition">Annulla</button>
+                <button id="btnSaveDeck" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition">Salva</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toastMsg" class="fixed left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded shadow-lg opacity-0 z-50 pointer-events-none font-semibold" style="bottom: -50px;">
+        Notifica
+    </div>
+
+    <div class="max-w-7xl mx-auto p-4 flex flex-col gap-6 mt-2">
+        
+        <!-- NAVBAR SCHEDE -->
+        <div class="bg-white rounded-lg shadow px-4 flex gap-6 border-b border-gray-200 flex-wrap">
+            <button onclick="switchTab('home')" id="tab-home" class="tab-active py-4 px-2 focus:outline-none transition">Home & Aggiungi</button>
+            <button onclick="switchTab('binder')" id="tab-binder" class="tab-inactive py-4 px-2 focus:outline-none transition">Il Mio Raccoglitore</button>
+            <button onclick="switchTab('wishlist')" id="tab-wishlist" class="tab-inactive py-4 px-2 focus:outline-none transition">Wishlist & Proxy</button>
+            <button onclick="switchTab('decks')" id="tab-decks" class="tab-inactive py-4 px-2 focus:outline-none transition">I Miei Mazzi</button>
+            <button onclick="switchTab('settings')" id="tab-settings" class="tab-inactive py-4 px-2 focus:outline-none transition">Impostazioni & Dati</button>
+        </div>
+
+        <!-- TAB 1: GESTIONE / HOME -->
+        <div id="view-home" class="flex flex-col gap-4 block">
+            
+            <div class="bg-white p-4 rounded-lg shadow-md border-l-4 border-purple-500 flex flex-col md:flex-row justify-between items-center gap-4 hover:shadow-lg transition">
+                <div>
+                    <h3 class="font-bold text-gray-800">Soglia Proxy Automatica (€)</h3>
+                    <p class="text-xs text-gray-500">Se una carta costa quanto o più di questo valore, verrà forzata a "Proxy". Metti "0" per disabilitare.</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="font-bold text-gray-600">€</span>
+                    <input type="number" id="proxyThresholdMain" class="border border-gray-300 p-2 rounded w-24 text-center focus:ring-2 focus:ring-indigo-500 font-bold" placeholder="0">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div class="bg-white p-4 rounded-lg shadow border-l-4 border-indigo-500">
+                    <p class="text-sm text-gray-500 font-semibold">Carte Fisiche (Raccoglitore)</p>
+                    <p id="statTotalCards" class="text-2xl font-bold text-gray-800">0</p>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow border-l-4 border-green-500">
+                    <p class="text-sm text-gray-500 font-semibold">Valore Raccoglitore</p>
+                    <p id="statCollectionValue" class="text-2xl font-bold text-green-600">€ 0.00</p>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow border-l-4 border-yellow-500">
+                    <p class="text-sm text-gray-500 font-semibold">Costo Wishlist / Acquisti</p>
+                    <p id="statMissingValue" class="text-2xl font-bold text-yellow-600">€ 0.00</p>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow border-l-4 border-purple-500">
+                    <p class="text-sm text-gray-500 font-semibold">Mazzi Creati</p>
+                    <p id="statTotalDecks" class="text-2xl font-bold text-purple-700">0</p>
+                </div>
+            </div>
+
+            <div class="flex flex-col lg:flex-row gap-6 mt-2">
+                <div class="w-full lg:w-1/2 bg-white p-6 rounded-lg shadow-md">
+                    <h2 class="text-xl font-bold mb-4 text-indigo-700">Aggiungi Singola Carta</h2>
+                    <div class="relative mb-4">
+                        <label class="block text-sm font-semibold mb-1">Nome Carta (Inglese)</label>
+                        <input type="text" id="cardName" class="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-indigo-500" placeholder="Es. Sol Ring" autocomplete="off">
+                        <div id="autocomplete-list" class="autocomplete-items hidden shadow-lg rounded-b"></div>
+                    </div>
+                    <div class="mb-4 flex gap-4">
+                        <div class="w-1/4">
+                            <label class="block text-sm font-semibold mb-1">Q.tà</label>
+                            <input type="number" id="cardQty" min="1" value="1" class="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-indigo-500">
+                        </div>
+                        <div class="w-1/4">
+                            <label class="block text-sm font-semibold mb-1">Prezzo (€)</label>
+                            <input type="number" step="0.01" id="cardPrice" class="w-full border border-gray-300 p-2 rounded bg-gray-200 cursor-not-allowed text-sm" readonly placeholder="Auto">
+                        </div>
+                        <div class="w-1/2 relative group">
+                            <img id="cardPreview" src="https://via.placeholder.com/146x204?text=Anteprima" class="w-full h-auto rounded border" data-cmc="0" data-colors="[]" data-typeline="">
+                        </div>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-semibold mb-1">Stato</label>
+                        <select id="cardStatus" class="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-indigo-500">
+                            <option value="Possesso">In Possesso</option>
+                            <option value="Ordinata">Ordinata (In Arrivo)</option>
+                            <option value="DaOrdinare">Da Ordinare (Carrello)</option>
+                            <option value="Proxy">Proxy</option>
+                            <option value="Mancante">Mancante</option>
+                        </select>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-semibold mb-1">Mazzi (Separati da virgola per tag multipli)</label>
+                        <input list="deckOptions" id="cardDeck" class="w-full border border-gray-300 p-2 rounded mb-2 focus:ring-2 focus:ring-indigo-500" placeholder="Es. Commander Ur-Dragon">
+                        <datalist id="deckOptions"></datalist>
+                        
+                        <label class="flex items-center gap-2 text-sm font-semibold text-gray-700 bg-gray-50 p-2 rounded border cursor-pointer hover:bg-gray-100 transition">
+                            <input type="checkbox" id="cardIsCommander" class="w-4 h-4 text-indigo-600 focus:ring-indigo-500">
+                            Imposta come Comandante (crea mazzo in automatico)
+                        </label>
+                    </div>
+                    <button onclick="addCard()" class="w-full bg-indigo-600 text-white font-bold py-2 px-4 rounded hover:bg-indigo-700 mt-2 shadow transition">
+                        + Aggiungi Carta
+                    </button>
+                </div>
+
+                <div class="w-full lg:w-1/2 bg-white p-6 rounded-lg shadow-md">
+                    <h2 class="text-xl font-bold mb-4 text-green-700">Importa Lista Testuale</h2>
+                    <p class="text-xs text-gray-500 mb-2">Incolla qui una lista. Formato: <code>1 Sol Ring</code> oppure solo <code>Sol Ring</code>.</p>
+                    <textarea id="importText" rows="8" class="w-full border border-gray-300 p-2 rounded mb-4 text-sm focus:ring-2 focus:ring-green-500" placeholder="4 Lightning Bolt&#10;Sol Ring"></textarea>
+                    
+                    <div class="mb-4">
+                        <label class="block text-sm font-semibold mb-1">Assegna ai Mazzi (Separati da virgola)</label>
+                        <input list="deckOptions" id="importDeck" class="w-full border border-gray-300 p-2 rounded text-sm focus:ring-2 focus:ring-green-500" placeholder="Es. Modern Burn">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-semibold mb-1">Stato Globale</label>
+                        <select id="importStatus" class="w-full border border-gray-300 p-2 rounded text-sm focus:ring-2 focus:ring-green-500">
+                            <option value="DaOrdinare">Da Ordinare</option>
+                            <option value="Possesso">In Possesso</option>
+                            <option value="Proxy">Proxy</option>
+                            <option value="Mancante">Mancante</option>
+                        </select>
+                    </div>
+                    
+                    <div id="importProgressBar" class="w-full bg-gray-200 rounded-full h-2.5 mb-4 hidden">
+                        <div id="importProgress" class="bg-green-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+
+                    <button id="btnImport" onclick="importListText()" class="w-full bg-green-600 text-white font-bold py-2 px-4 rounded hover:bg-green-700 shadow transition">
+                        Avvia Importazione Multipla
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 2: RACCOGLITORE E WISHLIST -->
+        <div id="view-collection" class="hidden bg-white p-6 rounded-lg shadow-md flex-col">
+            
+            <div class="flex flex-wrap justify-between items-center mb-4 border-b pb-4 gap-4">
+                <h2 id="collectionTitle" class="text-2xl font-bold text-gray-800 w-full md:w-auto">Collezione</h2>
+                
+                <div class="flex flex-col md:flex-row gap-2 w-full bg-gray-50 p-3 rounded border">
+                    <input type="text" id="searchFilter" oninput="renderCollectionTable()" placeholder="🔍 Cerca per nome..." class="border border-gray-300 p-1.5 rounded text-sm flex-grow focus:ring-2 focus:ring-indigo-500">
+                    
+                    <label class="flex items-center gap-2 text-sm font-semibold text-gray-700 bg-white px-3 py-1.5 rounded border cursor-pointer shrink-0 hover:bg-gray-100 transition">
+                        <input type="checkbox" id="groupByType" onchange="renderCollectionTable()" class="w-4 h-4 text-indigo-600">
+                        Raggruppa Tipologia
+                    </label>
+
+                    <select id="sortOption" onchange="renderCollectionTable()" class="border border-gray-300 p-1.5 rounded text-sm focus:ring-2 focus:ring-indigo-500">
+                        <option value="default">Inserimento</option>
+                        <option value="nameAsc">Nome (A-Z)</option>
+                        <option value="nameDesc">Nome (Z-A)</option>
+                        <option value="priceDesc">Prezzo (Decrescente)</option>
+                        <option value="priceAsc">Prezzo (Crescente)</option>
+                        <option value="cmcDesc">Costo Mana (Alto-Basso)</option>
+                        <option value="cmcAsc">Costo Mana (Basso-Alto)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="bulkActionsBar" class="hidden bg-indigo-50 border border-indigo-200 p-3 rounded-lg mb-4 flex justify-between items-center shadow-sm">
+                <span class="text-indigo-800 font-semibold text-sm">
+                    <span id="bulkCount">0</span> gruppi selezionati
+                </span>
+                <div class="flex gap-3 items-center">
+                    <select id="bulkStatusSelect" class="border border-gray-300 p-1 rounded text-sm focus:ring-2 focus:ring-indigo-500">
+                        <option value="">-- Cambia Stato --</option>
+                        <option value="Possesso">In Possesso</option>
+                        <option value="Ordinata">Ordinata</option>
+                        <option value="DaOrdinare">Da Ordinare</option>
+                        <option value="Proxy">Proxy</option>
+                        <option value="Mancante">Mancante</option>
+                    </select>
+                    <button onclick="applyBulkStatus()" class="bg-indigo-600 text-white text-sm px-3 py-1 rounded hover:bg-indigo-700 transition shadow-sm">Applica</button>
+                    <span class="text-gray-400">|</span>
+                    <button onclick="deleteSelected()" class="bg-red-500 text-white text-sm px-3 py-1 rounded hover:bg-red-600 transition shadow-sm">Elimina</button>
+                </div>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="min-w-full bg-white border border-gray-200 text-left text-sm">
+                    <thead class="bg-gray-800 text-white">
+                        <tr>
+                            <th class="p-3 w-10 text-center"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()" class="w-4 h-4 cursor-pointer focus:ring-indigo-500"></th>
+                            <th class="p-3 font-semibold text-center w-24">Q.tà</th>
+                            <th class="p-3 font-semibold">Carta</th>
+                            <th class="p-3 font-semibold">Mazzi (Tag)</th>
+                            <th class="p-3 font-semibold">Stato</th>
+                            <th class="p-3 font-semibold text-right">Valore (€)</th>
+                            <th class="p-3 font-semibold text-center">Azioni</th>
+                        </tr>
+                    </thead>
+                    <tbody id="collectionTable" class="divide-y divide-gray-200"></tbody>
+                </table>
+            </div>
+            <div id="emptyState" class="text-center py-8 text-gray-500 hidden">Nessuna carta trovata in questa sezione.</div>
+        </div>
+
+        <!-- TAB 3: MAZZI -->
+        <div id="view-decks" class="hidden flex-col gap-4">
+            
+            <div id="decksGridContainer" class="flex flex-col gap-4">
+                <h2 class="text-xl font-bold text-gray-800 mb-2">I Miei Mazzi</h2>
+                <div id="decksGrid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6"></div>
+                <div id="decksEmptyState" class="text-center py-12 text-gray-500 bg-white rounded shadow hidden border-2 border-dashed border-gray-300">
+                    Nessun mazzo creato.<br>Crea un mazzo assegnando dei tag alle carte!
+                </div>
+            </div>
+
+            <div id="singleDeckContainer" class="hidden flex-col gap-6 bg-white p-6 rounded-lg shadow-md border-t-4 border-indigo-600">
+                <div class="flex flex-wrap justify-between items-center border-b pb-4 gap-4">
+                    <div class="flex items-center gap-4 w-full md:w-auto">
+                        <button onclick="closeDeckView()" class="bg-gray-100 text-gray-800 px-3 py-1.5 rounded hover:bg-gray-200 font-bold shadow-sm border border-gray-300 transition">⬅ Torna ai Mazzi</button>
+                        <h2 id="singleDeckTitle" class="text-2xl font-bold text-gray-800">Nome Mazzo</h2>
+                    </div>
+                    <div class="flex gap-2 w-full md:w-auto flex-wrap">
+                        <button onclick="renameCurrentDeck()" class="text-sm bg-blue-500 text-white py-1.5 px-3 rounded hover:bg-blue-600 font-semibold shadow transition">✏️ Rinomina</button>
+                        <button onclick="deleteCurrentDeck()" class="text-sm bg-red-600 text-white py-1.5 px-3 rounded hover:bg-red-700 font-semibold shadow transition">🗑️ Elimina Mazzo</button>
+                        <div class="w-full md:hidden"></div>
+                        <button onclick="exportDeckOrders(currentOpenDeck)" class="text-sm bg-orange-500 text-white py-1.5 px-3 rounded hover:bg-orange-600 font-semibold shadow transition">📋 Ordini</button>
+                        <button onclick="exportDeckMPC(currentOpenDeck)" class="text-sm bg-purple-600 text-white py-1.5 px-3 rounded hover:bg-purple-700 font-semibold shadow transition">🖨️ Proxy</button>
+                    </div>
+                </div>
+                
+                <div id="singleDeckStats"></div>
+
+                <div class="flex justify-between items-center bg-gray-50 p-2 rounded border">
+                    <span class="text-sm font-semibold text-gray-600">Filtra/Ordina nel mazzo:</span>
+                    <select id="singleDeckSortOption" onchange="renderSingleDeck(currentOpenDeck)" class="border border-gray-300 p-1.5 rounded text-sm focus:ring-2 focus:ring-indigo-500">
+                        <option value="type">Raggruppa per Tipo</option>
+                        <option value="cmcDesc">Costo Mana (Alto-Basso)</option>
+                        <option value="cmcAsc">Costo Mana (Basso-Alto)</option>
+                        <option value="priceDesc">Prezzo (Decrescente)</option>
+                        <option value="nameAsc">Nome (A-Z)</option>
+                    </select>
+                </div>
+
+                <div class="bg-indigo-50 p-4 rounded border border-indigo-200 shadow-inner flex flex-col md:flex-row gap-4 items-end relative">
+                    <div class="w-full md:w-1/3 relative">
+                        <label class="block text-xs font-bold mb-1 text-indigo-900 uppercase tracking-wide">Aggiungi Direttamente</label>
+                        <input type="text" id="inlineAddName" class="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-indigo-500 text-sm" placeholder="Cerca nome carta..." autocomplete="off">
+                        <div id="inlineAddAutocomplete" class="autocomplete-items hidden shadow-lg rounded-b text-sm"></div>
+                    </div>
+                    <div class="w-full md:w-16">
+                        <label class="block text-xs font-bold mb-1 text-indigo-900 uppercase tracking-wide">Q.tà</label>
+                        <input type="number" id="inlineAddQty" min="1" value="1" class="w-full border border-gray-300 p-2 rounded text-sm text-center focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                    <div class="w-full md:w-24">
+                        <label class="block text-xs font-bold mb-1 text-indigo-900 uppercase tracking-wide">Prezzo</label>
+                        <input type="number" step="0.01" id="inlineAddPrice" class="w-full border border-gray-300 p-2 rounded bg-gray-200 cursor-not-allowed text-sm" readonly>
+                    </div>
+                    <div class="w-full md:w-40">
+                        <label class="block text-xs font-bold mb-1 text-indigo-900 uppercase tracking-wide">Stato</label>
+                        <select id="inlineAddStatus" class="w-full border border-gray-300 p-2 rounded text-sm focus:ring-2 focus:ring-indigo-500">
+                            <option value="Possesso">In Possesso</option>
+                            <option value="Ordinata">Ordinata</option>
+                            <option value="DaOrdinare">Da Ordinare</option>
+                            <option value="Proxy">Proxy</option>
+                            <option value="Mancante">Mancante</option>
+                        </select>
+                    </div>
+                    <div class="w-full md:w-auto pb-2 flex items-center">
+                        <label class="flex items-center gap-2 text-sm font-bold text-indigo-900 cursor-pointer hover:text-indigo-700 transition">
+                            <input type="checkbox" id="inlineAddIsCmd" class="w-4 h-4 text-indigo-600 focus:ring-indigo-500"> È Comandante
+                        </label>
+                    </div>
+                    <button onclick="inlineDeckSaveCard()" class="bg-indigo-600 text-white font-bold py-2 px-4 rounded hover:bg-indigo-700 shadow transition h-[38px] flex items-center justify-center">+ Aggiungi</button>
+                    
+                    <input type="hidden" id="inlineAddImgUrl">
+                    <input type="hidden" id="inlineAddCmc">
+                    <input type="hidden" id="inlineAddColors">
+                    <input type="hidden" id="inlineAddTypeLine">
+                </div>
+
+                <div class="overflow-x-auto border rounded-lg">
+                    <table class="min-w-full bg-white text-left text-sm">
+                        <thead class="bg-gray-100 text-gray-700 border-b-2 border-gray-300">
+                            <tr>
+                                <th class="p-3 font-bold text-center w-24">Q.tà</th>
+                                <th class="p-3 font-bold">Carta</th>
+                                <th class="p-3 font-bold">Stato</th>
+                                <th class="p-3 font-bold text-right">Valore (€)</th>
+                                <th class="p-3 font-bold text-center">Rimuovi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="singleDeckTable" class="divide-y divide-gray-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 4: IMPOSTAZIONI E BACKUP -->
+        <div id="view-settings" class="hidden flex-col gap-6">
+            
+            <div class="bg-white p-6 rounded-lg shadow-md max-w-2xl border-t-4 border-indigo-600">
+                <h2 class="text-xl font-bold text-gray-800 mb-2 border-b pb-2">Salvataggio Dati & Backup Originale</h2>
+                <p class="text-sm text-gray-600 mb-6">Usa queste opzioni per spostare la tua collezione nativa su un altro dispositivo o fare un backup di sicurezza.</p>
+                <div class="flex flex-col gap-4">
+                    <div class="flex justify-between items-center bg-gray-50 p-4 border rounded hover:shadow-md transition">
+                        <div>
+                            <h3 class="font-bold">Esporta Backup (.json)</h3>
+                            <p class="text-xs text-gray-500">Salva l'intero database locale.</p>
+                        </div>
+                        <button onclick="exportBackup()" class="bg-indigo-600 text-white px-4 py-2 rounded font-bold shadow hover:bg-indigo-700">Scarica</button>
+                    </div>
+                    <div class="flex justify-between items-center bg-gray-50 p-4 border rounded hover:shadow-md transition">
+                        <div>
+                            <h3 class="font-bold">Importa Backup (.json)</h3>
+                            <p class="text-xs text-gray-500">Ripristina un database precedentemente salvato.</p>
+                        </div>
+                        <label class="bg-green-600 text-white px-4 py-2 rounded font-bold shadow hover:bg-green-700 cursor-pointer">
+                            Carica File
+                            <input type="file" id="importFile" accept=".json" class="hidden" onchange="importBackup(event)">
+                        </label>
+                    </div>
+                    <div class="flex justify-between items-center bg-gray-50 p-4 border rounded hover:shadow-md transition">
+                        <div>
+                            <h3 class="font-bold">Esporta Tabella in Excel (.csv)</h3>
+                            <p class="text-xs text-gray-500">Solo per visualizzazione (non ricaricabile).</p>
+                        </div>
+                        <button onclick="exportExcel()" class="bg-blue-600 text-white px-4 py-2 rounded font-bold shadow hover:bg-blue-700">Esporta Excel</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white p-6 rounded-lg shadow-md max-w-2xl border-t-4 border-green-500">
+                <h2 class="text-xl font-bold text-gray-800 mb-2 border-b pb-2">Importazione da Altre App (Manabox / DelverLens)</h2>
+                <p class="text-sm text-gray-600 mb-6">Carica un file <b>.csv</b> generato da un'altra applicazione. Il sistema cercherà le colonne "Name" (o simili) e "Quantity" per importarle massivamente nel raccoglitore.</p>
+                
+                <div class="flex flex-col gap-4">
+                    <div class="mb-2">
+                        <label class="block text-sm font-semibold mb-1">Mazzi di destinazione (opzionale)</label>
+                        <input list="deckOptions" id="csvImportDeck" class="w-full border border-gray-300 p-2 rounded text-sm" placeholder="Es. Modern Burn">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-semibold mb-1">Stato Globale per il blocco importato</label>
+                        <select id="csvImportStatus" class="w-full border border-gray-300 p-2 rounded text-sm focus:ring-2 focus:ring-green-500">
+                            <option value="Possesso">In Possesso</option>
+                            <option value="DaOrdinare">Da Ordinare</option>
+                            <option value="Proxy">Proxy</option>
+                            <option value="Mancante">Mancante</option>
+                        </select>
+                    </div>
+                    
+                    <div id="csvImportProgressBar" class="w-full bg-gray-200 rounded-full h-2.5 mb-4 hidden">
+                        <div id="csvImportProgress" class="bg-green-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+
+                    <label class="w-full text-center bg-green-600 text-white font-bold py-3 px-4 rounded hover:bg-green-700 shadow cursor-pointer transition">
+                        Seleziona file CSV e Importa
+                        <input type="file" id="csvFileUpload" accept=".csv,.txt" class="hidden" onchange="importCSVFile(event)">
+                    </label>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <script>
+        // CORE DATA E SETUP
+        let collection = [];
+        let debounceTimer;
+        let selectedCards = new Set();
+        let currentOpenDeck = null;
+        let currentCollectionView = 'binder'; 
+        const STORAGE_KEY = 'mtg_local_app_v10'; 
+        
+        const apiCache = { autocomplete: {}, details: {} };
+
+        function escapeHTML(str) {
+            if(!str) return '';
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+        }
+        function escapeJS(str) {
+            if(!str) return '';
+            return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        }
+
+        window.showPreview = function(url, event) {
+            if(!url) return;
+            const box = document.getElementById('hoverPreviewBox');
+            document.getElementById('hoverPreviewImg').src = url;
+            box.classList.remove('hidden');
+            let x = event.clientX + 20; let y = event.clientY - 150;
+            if (x + 260 > window.innerWidth) x = event.clientX - 280;
+            if (y + 360 > window.innerHeight) y = window.innerHeight - 380;
+            if (y < 0) y = 10;
+            box.style.left = x + 'px'; box.style.top = y + 'px';
+        };
+        window.hidePreview = function() { document.getElementById('hoverPreviewBox').classList.add('hidden'); };
+
+        function showToast(msg) {
+            const toast = document.getElementById('toastMsg');
+            toast.innerText = msg; toast.classList.remove('toast-show');
+            void toast.offsetWidth; toast.classList.add('toast-show');
+        }
+
+        function showConfirm(title, message, onConfirm) {
+            document.getElementById('confirmTitle').innerText = title;
+            document.getElementById('confirmMessage').innerText = message;
+            const modal = document.getElementById('confirmModal'); modal.classList.remove('hidden');
+            const btnOk = document.getElementById('btnConfirmOk'); const btnCancel = document.getElementById('btnConfirmCancel');
+            const newBtnOk = btnOk.cloneNode(true); const newBtnCancel = btnCancel.cloneNode(true);
+            btnOk.parentNode.replaceChild(newBtnOk, btnOk); btnCancel.parentNode.replaceChild(newBtnCancel, btnCancel);
+            newBtnCancel.onclick = () => modal.classList.add('hidden');
+            newBtnOk.onclick = () => { onConfirm(); modal.classList.add('hidden'); };
+        }
+
+        function switchTab(tabId) {
+            ['home', 'collection', 'decks', 'settings'].forEach(id => {
+                let view = document.getElementById(`view-${id}`);
+                if(view) { view.classList.add('hidden'); view.classList.remove('flex', 'block'); }
+            });
+            ['tab-home', 'tab-binder', 'tab-wishlist', 'tab-decks', 'tab-settings'].forEach(id => {
+                let btn = document.getElementById(id);
+                btn.classList.remove('tab-active'); btn.classList.add('tab-inactive');
+            });
+            document.getElementById(`tab-${tabId}`).classList.add('tab-active');
+            document.getElementById(`tab-${tabId}`).classList.remove('tab-inactive');
+
+            if (tabId === 'home') { document.getElementById('view-home').classList.remove('hidden'); document.getElementById('view-home').classList.add('flex'); }
+            if (tabId === 'settings') { document.getElementById('view-settings').classList.remove('hidden'); document.getElementById('view-settings').classList.add('flex'); }
+            if (tabId === 'decks') { 
+                document.getElementById('view-decks').classList.remove('hidden'); document.getElementById('view-decks').classList.add('flex');
+                if(currentOpenDeck) renderSingleDeck(currentOpenDeck); else renderDecksGrid();
+            }
+            if (tabId === 'binder' || tabId === 'wishlist') {
+                currentCollectionView = tabId;
+                document.getElementById('view-collection').classList.remove('hidden');
+                document.getElementById('view-collection').classList.add('flex');
+                document.getElementById('collectionTitle').innerText = tabId === 'binder' ? "Il Mio Raccoglitore (Fisiche)" : "Wishlist & Proxy";
+                renderCollectionTable();
+            }
+        }
+
+        const PREFS_KEY = 'mtg_local_prefs';
+        let prefs = { proxyThreshold: 0 };
+        function loadPrefs() {
+            try {
+                const saved = localStorage.getItem(PREFS_KEY);
+                if (saved) {
+                    prefs = JSON.parse(saved);
+                    if (prefs.proxyThreshold) document.getElementById('proxyThresholdMain').value = prefs.proxyThreshold;
+                }
+            } catch(e) {}
+        }
+        document.getElementById('proxyThresholdMain').addEventListener('input', function() {
+            let val = parseFloat(this.value);
+            prefs.proxyThreshold = isNaN(val) ? 0 : val;
+            localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+        });
+        function checkProxyThreshold(price, requestedStatus) {
+            if (prefs.proxyThreshold > 0 && price >= prefs.proxyThreshold) return 'Proxy';
+            return requestedStatus;
+        }
+
+        // --- MOTORE DATI ---
+        function calcPrimaryType(isCmd, typeLine) {
+            if (isCmd) return "Comandante";
+            if (!typeLine) return "Altro";
+            let tl = typeLine.toLowerCase();
+            if (tl.includes("creature")) return "Creature";
+            if (tl.includes("planeswalker")) return "Planeswalker";
+            if (tl.includes("instant")) return "Istantanei";
+            if (tl.includes("sorcery")) return "Stregonerie";
+            if (tl.includes("artifact")) return "Artefatti";
+            if (tl.includes("enchantment")) return "Incantesimi";
+            if (tl.includes("battle")) return "Battaglie";
+            if (tl.includes("land")) return "Terre";
+            return "Altro";
+        }
+
+        function runGlobalMerge() {
+            const map = new Map();
+            collection.forEach(card => {
+                const key = `${card.name.toLowerCase()}_${card.status}`;
+                if (map.has(key)) {
+                    let existing = map.get(key);
+                    existing.qty += card.qty;
+                    card.decks.forEach(d => { if(d && !existing.decks.includes(d)) existing.decks.push(d); });
+                    if(card.isCommander) existing.isCommander = true;
+                    if(!existing.type_line && card.type_line) existing.type_line = card.type_line;
+                    if(!existing.color_identity && card.color_identity) existing.color_identity = card.color_identity;
+                    existing.primary_type = calcPrimaryType(existing.isCommander, existing.type_line);
+                } else {
+                    card.primary_type = calcPrimaryType(card.isCommander, card.type_line);
+                    map.set(key, {...card});
+                }
+            });
+            collection = Array.from(map.values()).filter(c => c.qty > 0);
+        }
+
+        function loadData() {
+            try {
+                let saved = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('mtg_local_app_v9') || localStorage.getItem('mtg_local_app_v8');
+                if (saved) {
+                    let parsed = JSON.parse(saved);
+                    if (Array.isArray(parsed)) {
+                        collection = parsed.map(c => {
+                            if (c.qty === undefined) c.qty = 1;
+                            if (c.decks === undefined) c.decks = [];
+                            if (c.cmc === undefined) c.cmc = 0;
+                            if (c.color_identity === undefined) c.color_identity = [];
+                            if (c.type_line === undefined) c.type_line = "";
+                            if (c.isCommander === undefined) c.isCommander = false;
+                            return c;
+                        });
+                        runGlobalMerge();
+                    }
+                }
+            } catch (e) { collection = []; }
+            updateUI();
+        }
+
+        function saveData() {
+            runGlobalMerge(); 
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(collection));
+            updateUI();
+        }
+
+        function updateUI() {
+            updateDashboard();
+            updateDeckSelectors();
+            if(!document.getElementById('view-collection').classList.contains('hidden')) renderCollectionTable();
+            if(!document.getElementById('view-decks').classList.contains('hidden')) {
+                if(currentOpenDeck) renderSingleDeck(currentOpenDeck); else renderDecksGrid();
+            }
+        }
+
+        function updateDashboard() {
+            let colOwned = collection.filter(c => ['Possesso', 'Ordinata'].includes(c.status));
+            document.getElementById('statTotalCards').innerText = colOwned.reduce((acc, c) => acc + c.qty, 0);
+            document.getElementById('statCollectionValue').innerText = '€ ' + colOwned.reduce((a, c) => a + (c.price * c.qty), 0).toFixed(2);
+            
+            let valD = collection.filter(c => ['Mancante', 'DaOrdinare'].includes(c.status)).reduce((a, c) => a + (c.price * c.qty), 0);
+            document.getElementById('statMissingValue').innerText = '€ ' + valD.toFixed(2);
+            document.getElementById('statTotalDecks').innerText = [...new Set(collection.flatMap(c => c.decks))].length;
+        }
+
+        function updateDeckSelectors() {
+            let uniqueDecks = [...new Set(collection.flatMap(c => c.decks))].sort();
+            const datalists = ['deckOptions', 'deckOptionsModal', 'csvImportDeck'];
+            datalists.forEach(id => {
+                let el = document.getElementById(id);
+                if(el) {
+                    el.innerHTML = '';
+                    uniqueDecks.forEach(deck => el.appendChild(new Option(deck, deck)));
+                }
+            });
+        }
+
+        function getCardGlobalStats(cardName) {
+            let nameLower = cardName.toLowerCase();
+            let owned = 0, req = 0;
+            collection.forEach(c => {
+                if(c.name.toLowerCase() === nameLower) {
+                    if(['Possesso', 'Ordinata'].includes(c.status)) owned += c.qty;
+                    if(['Mancante', 'DaOrdinare'].includes(c.status)) req += c.qty;
+                }
+            });
+            return { owned, req };
+        }
+
+        // --- SMART FILL LOGIC ---
+        function resolveSmartFill(name, qtyToAdd, incomingDecks) {
+            let remaining = qtyToAdd;
+            let tagsToAbsorb = [...incomingDecks];
+            let nameLower = name.toLowerCase();
+
+            // Cerca carte mancanti dello stesso nome
+            let missingRecords = collection.filter(c => c.name.toLowerCase() === nameLower && ['Mancante', 'DaOrdinare'].includes(c.status));
+            
+            for(let i = 0; i < missingRecords.length && remaining > 0; i++) {
+                let rec = missingRecords[i];
+                let take = Math.min(rec.qty, remaining);
+                rec.qty -= take;
+                remaining -= take;
+                rec.decks.forEach(d => { if(!tagsToAbsorb.includes(d)) tagsToAbsorb.push(d); });
+            }
+            
+            collection = collection.filter(c => c.qty > 0); // Cleanup eventuali record andati a 0
+            return tagsToAbsorb;
+        }
+
+        // --- GESTIONE MAZZI ---
+        window.renameCurrentDeck = function() {
+            if(!currentOpenDeck) return;
+            let newName = prompt("Inserisci il nuovo nome per il mazzo:", currentOpenDeck);
+            if(!newName || newName.trim() === "" || newName === currentOpenDeck) return;
+            newName = newName.trim();
+            
+            collection.forEach(c => {
+                let idx = c.decks.indexOf(currentOpenDeck);
+                if(idx !== -1) {
+                    c.decks[idx] = newName;
+                }
+            });
+            currentOpenDeck = newName;
+            saveData();
+            showToast("Mazzo rinominato!");
+        };
+
+        window.deleteCurrentDeck = function() {
+            if(!currentOpenDeck) return;
+            showConfirm("Elimina Mazzo", `Vuoi davvero eliminare l'intero mazzo "${currentOpenDeck}"? Le carte torneranno nel raccoglitore.`, () => {
+                collection.forEach(c => {
+                    c.decks = c.decks.filter(d => d !== currentOpenDeck);
+                    if(c.decks.length === 0 && c.isCommander) c.isCommander = false;
+                });
+                saveData();
+                showToast("Mazzo eliminato!");
+                closeDeckView();
+            });
+        };
+
+        window.openDeckView = function(deckName) {
+            document.getElementById('decksGridContainer').classList.add('hidden');
+            document.getElementById('singleDeckContainer').classList.remove('hidden');
+            document.getElementById('singleDeckContainer').classList.add('flex');
+            currentOpenDeck = deckName;
+            renderSingleDeck(deckName);
+        };
+        window.closeDeckView = function() {
+            document.getElementById('singleDeckContainer').classList.add('hidden');
+            document.getElementById('singleDeckContainer').classList.remove('flex');
+            document.getElementById('decksGridContainer').classList.remove('hidden');
+            currentOpenDeck = null;
+            renderDecksGrid();
+        };
+
+        function validateDeck(deckCards) {
+            let errors = [];
+            let commanders = deckCards.filter(c => c.isCommander);
+            let total = deckCards.reduce((a, c) => a + c.qty, 0);
+            if (commanders.length > 0) {
+                if (total !== 100) errors.push(`Il mazzo ha ${total} carte (dovrebbero essere 100).`);
+                let cmdColors = new Set();
+                commanders.forEach(cmd => { if(cmd.color_identity) cmd.color_identity.forEach(color => cmdColors.add(color)); });
+                let invalidColors = deckCards.filter(c => {
+                    if(!c.color_identity || c.color_identity.length === 0) return false;
+                    return !c.color_identity.every(col => cmdColors.has(col));
+                });
+                if (invalidColors.length > 0) errors.push(`Colori errati: ${invalidColors.map(c=>escapeHTML(c.name)).join(', ')}`);
+            } else { errors.push("Nessun Comandante designato."); }
+
+            const basicLands = ["plains", "island", "swamp", "mountain", "forest", "wastes", "snow-covered plains", "snow-covered island", "snow-covered swamp", "snow-covered mountain", "snow-covered forest"];
+            const exceptions = ["relentless rats", "shadowborn apostle", "persistent petitioners", "dragon's approach", "slime against humanity", "templar knight", "nazgûl", "seven dwarves"];
+            let invalidCopies = deckCards.filter(c => {
+                if (c.qty <= 1) return false;
+                let nl = c.name.toLowerCase();
+                if (basicLands.includes(nl) || exceptions.includes(nl) || (c.type_line && c.type_line.toLowerCase().includes("basic land"))) return false;
+                return true;
+            });
+            if (invalidCopies.length > 0) errors.push(`Copie multiple errate: ${invalidCopies.map(c=>escapeHTML(c.name)).join(', ')}`);
+            return errors;
+        }
+
+        function renderSingleDeck(deckName) {
+            document.getElementById('singleDeckTitle').innerText = deckName;
+            let deckCards = collection.filter(c => c.decks.includes(deckName));
+            let totalCards = deckCards.reduce((acc, c) => acc + c.qty, 0);
+            let vTot = deckCards.reduce((a, c) => a + (c.price * c.qty), 0);
+            let vM = deckCards.filter(c => ['DaOrdinare','Mancante'].includes(c.status)).reduce((a, c) => a + (c.price * c.qty), 0);
+            
+            let valErrors = validateDeck(deckCards);
+            let validationHtml = valErrors.length === 0 
+                ? `<div class="mt-2 p-2 bg-green-50 text-green-800 text-sm rounded border border-green-200">✅ Mazzo valido.</div>`
+                : `<div class="mt-2 p-2 bg-red-50 text-red-800 text-sm rounded border border-red-200"><strong>⚠️ Problemi:</strong><ul class="list-disc ml-5 mt-1">${valErrors.map(e => `<li>${e}</li>`).join('')}</ul></div>`;
+
+            document.getElementById('singleDeckStats').innerHTML = `
+                <div class="grid grid-cols-3 gap-4 text-center mb-2">
+                    <div class="bg-gray-50 p-2 rounded border"><p class="text-gray-500 text-xs uppercase font-bold">Carte Totali</p><p class="font-bold text-gray-800 text-lg">${totalCards}</p></div>
+                    <div class="bg-indigo-50 p-2 rounded border border-indigo-100"><p class="text-indigo-600 text-xs uppercase font-bold">Valore Totale</p><p class="font-bold text-indigo-700 text-lg">€ ${vTot.toFixed(2)}</p></div>
+                    <div class="bg-red-50 p-2 rounded border border-red-100"><p class="text-red-600 text-xs uppercase font-bold">Mancanti</p><p class="font-bold text-red-700 text-lg">€ ${vM.toFixed(2)}</p></div>
+                </div>
+                ${validationHtml}
+            `;
+
+            let sortOpt = document.getElementById('singleDeckSortOption').value;
+            let tbodyHtml = '';
+
+            function generateRow(card) {
+                let bgClass = card.status === 'Possesso' ? "bg-white" : (card.status==='Proxy' ? "bg-purple-50" : (card.status==='Ordinata' ? "bg-blue-50" : "bg-red-50"));
+                let cmdIcon = card.isCommander ? '👑 ' : '';
+                let stats = getCardGlobalStats(card.name);
+                
+                return `
+                <tr class="border-b border-gray-100 hover:bg-indigo-50 transition ${bgClass}">
+                    <td class="p-2 text-center">
+                        <div class="flex items-center justify-center gap-1">
+                            <button onclick="changeQty('${card.id}', -1)" class="w-5 h-5 rounded bg-gray-200 hover:bg-gray-300 font-bold leading-none">-</button>
+                            <span class="font-bold w-5 text-center">${card.qty}</span>
+                            <button onclick="changeQty('${card.id}', 1)" class="w-5 h-5 rounded bg-gray-200 hover:bg-gray-300 font-bold leading-none">+</button>
+                        </div>
+                    </td>
+                    <td class="p-2 font-medium text-gray-800 cursor-help" onmousemove="showPreview('${escapeHTML(card.imageUrl)}', event)" onmouseleave="hidePreview()">
+                        <div>${cmdIcon}${escapeHTML(card.name)}</div>
+                        <div class="text-[10px] text-gray-500 font-normal mt-0.5">📦 Poss: ${stats.owned} | 🛒 Rq: ${stats.req}</div>
+                    </td>
+                    <td class="p-2">
+                        <select onchange="updateSingleStatus('${card.id}', this.value)" class="text-xs font-bold p-1 bg-white border rounded shadow-sm focus:ring-indigo-500">
+                            <option value="Possesso" ${card.status === 'Possesso' ? 'selected' : ''}>Possesso</option>
+                            <option value="Ordinata" ${card.status === 'Ordinata' ? 'selected' : ''}>Ordinata</option>
+                            <option value="DaOrdinare" ${card.status === 'DaOrdinare' ? 'selected' : ''}>Da Ordinare</option>
+                            <option value="Proxy" ${card.status === 'Proxy' ? 'selected' : ''}>Proxy</option>
+                            <option value="Mancante" ${card.status === 'Mancante' ? 'selected' : ''}>Mancante</option>
+                        </select>
+                    </td>
+                    <td class="p-2 text-right font-bold text-gray-800">€ ${(card.price * card.qty).toFixed(2)}</td>
+                    <td class="p-2 text-center"><button onclick="removeFromDeck('${card.id}', '${escapeJS(deckName)}')" class="text-red-500 hover:bg-red-100 p-1 rounded font-bold text-lg transition" title="Rimuovi da questo mazzo">✖</button></td>
+                </tr>`;
+            }
+
+            if(sortOpt === 'type') {
+                let groups = {};
+                deckCards.forEach(c => {
+                    let pType = c.primary_type || calcPrimaryType(c.isCommander, c.type_line);
+                    if (!groups[pType]) groups[pType] = [];
+                    groups[pType].push(c);
+                });
+                const typeOrder = ["Comandante", "Creature", "Planeswalker", "Istantanei", "Stregonerie", "Artefatti", "Incantesimi", "Battaglie", "Terre", "Altro"];
+                typeOrder.forEach(type => {
+                    if (groups[type] && groups[type].length > 0) {
+                        let qT = groups[type].reduce((a,c)=>a+c.qty, 0);
+                        tbodyHtml += `<tr class="bg-gray-200 text-gray-800 border-b border-gray-300"><td colspan="5" class="p-2 pl-4 text-sm font-bold uppercase tracking-wide">${type} (${qT})</td></tr>`;
+                        groups[type].sort((a,b) => a.name.localeCompare(b.name)).forEach(card => { tbodyHtml += generateRow(card); });
+                    }
+                });
+            } else {
+                if (sortOpt === 'nameAsc') deckCards.sort((a, b) => a.name.localeCompare(b.name));
+                else if (sortOpt === 'priceDesc') deckCards.sort((a, b) => (b.price * b.qty) - (a.price * a.qty));
+                else if (sortOpt === 'cmcDesc') deckCards.sort((a, b) => (b.cmc || 0) - (a.cmc || 0));
+                else if (sortOpt === 'cmcAsc') deckCards.sort((a, b) => (a.cmc || 0) - (b.cmc || 0));
+                
+                deckCards.forEach(card => { tbodyHtml += generateRow(card); });
+            }
+
+            document.getElementById('singleDeckTable').innerHTML = tbodyHtml;
+        }
+
+        window.removeFromDeck = function(id, deckName) {
+            let index = collection.findIndex(c => c.id.toString() === id.toString());
+            if (index !== -1) {
+                collection[index].decks = collection[index].decks.filter(d => d !== deckName);
+                if(collection[index].decks.length === 0 && collection[index].isCommander) collection[index].isCommander = false;
+                saveData();
+                showToast("Carta rimossa dal mazzo.");
+            }
+        };
+
+        function renderDecksGrid() {
+            const container = document.getElementById('decksGrid');
+            const empty = document.getElementById('decksEmptyState');
+            let gridHtml = '';
+            let uniqueDecks = [...new Set(collection.flatMap(c => c.decks))].sort();
+            
+            if (uniqueDecks.length === 0) {
+                empty.classList.remove('hidden'); container.innerHTML = '';
+            } else {
+                empty.classList.add('hidden');
+                uniqueDecks.forEach(deckName => {
+                    let deckCards = collection.filter(c => c.decks.includes(deckName));
+                    let totalCards = deckCards.reduce((acc, c) => acc + c.qty, 0);
+                    let valTotale = deckCards.reduce((a, c) => a + (c.price * c.qty), 0);
+                    let safeDeckName = escapeHTML(deckName);
+                    
+                    gridHtml += `
+                    <div class="bg-white p-5 rounded-lg shadow cursor-pointer border-t-4 border-indigo-500 hover:shadow-xl hover:-translate-y-1 transition transform flex flex-col h-full" onclick="openDeckView('${escapeJS(deckName)}')">
+                        <div class="flex items-center gap-3 mb-3 border-b pb-3">
+                            <div class="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-xl shrink-0">🎴</div>
+                            <h3 class="font-bold text-gray-800 text-lg truncate flex-grow" title="${safeDeckName}">${safeDeckName}</h3>
+                        </div>
+                        <div class="flex justify-between items-center mt-auto">
+                            <div class="bg-gray-100 px-3 py-1 rounded text-sm text-gray-700 font-bold">${totalCards} Carte</div>
+                            <div class="text-lg font-bold text-green-700">€ ${valTotale.toFixed(2)}</div>
+                        </div>
+                    </div>`;
+                });
+                container.innerHTML = gridHtml;
+            }
+        }
+
+        // --- TABELLA COLLEZIONE E WISHLIST ---
+        function renderCollectionTable() {
+            const tbody = document.getElementById('collectionTable');
+            const emptyState = document.getElementById('emptyState');
+            
+            const searchFilter = document.getElementById('searchFilter').value.toLowerCase();
+            const sortOption = document.getElementById('sortOption').value;
+            const groupByType = document.getElementById('groupByType').checked;
+            
+            selectedCards.clear();
+            document.getElementById('selectAllCheckbox').checked = false;
+            updateBulkActionBar();
+
+            let filtered = [...collection];
+            if (currentCollectionView === 'binder') {
+                filtered = filtered.filter(c => ['Possesso', 'Ordinata'].includes(c.status));
+            } else if (currentCollectionView === 'wishlist') {
+                filtered = filtered.filter(c => ['DaOrdinare', 'Mancante', 'Proxy'].includes(c.status));
+            }
+
+            if (searchFilter) filtered = filtered.filter(c => c.name.toLowerCase().includes(searchFilter));
+
+            if (sortOption === 'nameAsc') filtered.sort((a, b) => a.name.localeCompare(b.name));
+            else if (sortOption === 'nameDesc') filtered.sort((a, b) => b.name.localeCompare(a.name));
+            else if (sortOption === 'priceDesc') filtered.sort((a, b) => (b.price * b.qty) - (a.price * a.qty));
+            else if (sortOption === 'priceAsc') filtered.sort((a, b) => (a.price * a.qty) - (b.price * b.qty));
+            else if (sortOption === 'cmcDesc') filtered.sort((a, b) => (b.cmc || 0) - (a.cmc || 0));
+            else if (sortOption === 'cmcAsc') filtered.sort((a, b) => (a.cmc || 0) - (b.cmc || 0));
+
+            if (filtered.length === 0) { 
+                emptyState.classList.remove('hidden'); 
+                tbody.innerHTML = '';
+            } else {
+                emptyState.classList.add('hidden');
+                
+                function buildRowHtml(card) {
+                    let bgClass = "hover:bg-gray-50";
+                    if(card.status === 'Possesso') bgClass = "bg-green-50";
+                    if(card.status === 'Mancante') bgClass = "bg-red-50";
+                    if(card.status === 'Ordinata') bgClass = "bg-blue-50";
+                    if(card.status === 'DaOrdinare') bgClass = "bg-yellow-50";
+                    if(card.status === 'Proxy') bgClass = "bg-purple-50";
+
+                    let safeName = escapeHTML(card.name);
+                    let safeDecks = escapeHTML(card.decks.join(', '));
+                    let decksHtml = card.decks.length > 0 
+                        ? card.decks.map(d => `<span class="bg-indigo-100 text-indigo-800 text-xs px-2 py-0.5 rounded shadow-sm border border-indigo-200 whitespace-nowrap">${escapeHTML(d)}</span>`).join(' ') 
+                        : '<span class="text-xs text-gray-400 italic">Nessuno</span>';
+                    let cmdIcon = card.isCommander ? '👑 ' : '';
+                    let stats = getCardGlobalStats(card.name);
+
+                    return `
+                        <tr class="border-b border-gray-200 transition ${bgClass}">
+                            <td class="p-3 text-center"><input type="checkbox" class="w-4 h-4 cursor-pointer row-checkbox focus:ring-indigo-500" data-id="${card.id}" onchange="toggleCardSelect('${card.id}', this.checked)"></td>
+                            <td class="p-3 text-center">
+                                <div class="flex items-center justify-center gap-1.5">
+                                    <button onclick="changeQty('${card.id}', -1)" class="w-6 h-6 rounded bg-gray-200 hover:bg-gray-300 font-bold leading-none transition">-</button>
+                                    <span class="font-bold w-6 text-center">${card.qty}</span>
+                                    <button onclick="changeQty('${card.id}', 1)" class="w-6 h-6 rounded bg-gray-200 hover:bg-gray-300 font-bold leading-none transition">+</button>
+                                </div>
+                            </td>
+                            <td class="p-3 font-medium cursor-help" onmousemove="showPreview('${escapeHTML(card.imageUrl)}', event)" onmouseleave="hidePreview()">
+                                <div>${cmdIcon}${safeName}</div>
+                                <div class="text-[10px] text-gray-500 font-normal mt-0.5">📦 Poss: ${stats.owned} | 🛒 Rq: ${stats.req}</div>
+                            </td>
+                            <td class="p-3"><div class="flex flex-wrap gap-1 items-center cursor-pointer group" onclick="openEditDeckModal('${card.id}', '${escapeJS(card.name)}', '${escapeJS(card.decks.join(', '))}', ${card.isCommander})">${decksHtml}<span class="text-xs text-indigo-500 opacity-0 group-hover:opacity-100 ml-1 transition">✏️</span></div></td>
+                            <td class="p-3">
+                                <select onchange="updateSingleStatus('${card.id}', this.value)" class="text-xs font-bold p-1 bg-white border rounded shadow-sm focus:ring-indigo-500">
+                                    <option value="Possesso" ${card.status === 'Possesso' ? 'selected' : ''}>In Possesso</option>
+                                    <option value="Ordinata" ${card.status === 'Ordinata' ? 'selected' : ''}>Ordinata</option>
+                                    <option value="DaOrdinare" ${card.status === 'DaOrdinare' ? 'selected' : ''}>Da Ordinare</option>
+                                    <option value="Proxy" ${card.status === 'Proxy' ? 'selected' : ''}>Proxy</option>
+                                    <option value="Mancante" ${card.status === 'Mancante' ? 'selected' : ''}>Mancante</option>
+                                </select>
+                            </td>
+                            <td class="p-3 text-right"><div class="font-bold text-gray-800">€ ${(card.price * card.qty).toFixed(2)}</div></td>
+                            <td class="p-3 text-center"><button onclick="confirmDelete('${card.id}')" class="text-red-500 bg-white border border-red-200 rounded p-1.5 hover:bg-red-100 shadow-sm transition">🗑️</button></td>
+                        </tr>`;
+                }
+
+                let tbodyHtml = '';
+                if (groupByType) {
+                    let groups = {};
+                    filtered.forEach(c => {
+                        let pType = c.primary_type || calcPrimaryType(c.isCommander, c.type_line);
+                        if (!groups[pType]) groups[pType] = [];
+                        groups[pType].push(c);
+                    });
+                    ["Comandante", "Creature", "Planeswalker", "Istantanei", "Stregonerie", "Artefatti", "Incantesimi", "Battaglie", "Terre", "Altro"].forEach(type => {
+                        if (groups[type] && groups[type].length > 0) {
+                            let qT = groups[type].reduce((a,c)=>a+c.qty, 0);
+                            tbodyHtml += `<tr class="bg-indigo-100 font-bold text-indigo-900 border-b-2 border-indigo-200"><td colspan="7" class="p-2 pl-4 text-sm">${type} (${qT})</td></tr>`;
+                            groups[type].forEach(card => { tbodyHtml += buildRowHtml(card); });
+                        }
+                    });
+                } else { 
+                    filtered.forEach(card => { tbodyHtml += buildRowHtml(card); }); 
+                }
+                tbody.innerHTML = tbodyHtml;
+            }
+        }
+
+        // --- GESTIONE AZIONI ---
+        window.changeQty = function(id, delta) {
+            let index = collection.findIndex(c => c.id.toString() === id.toString());
+            if (index !== -1) {
+                collection[index].qty += delta;
+                if(collection[index].qty <= 0) collection = collection.filter(c => c.id.toString() !== id.toString());
+                saveData();
+            }
+        };
+
+        function insertOrMergeCard(name, qty, price, finalStatus, inputDecks, imgUrl, cmc, colors, typeLine, isCommander) {
+            let targetDecks = [...inputDecks];
+
+            // SMART FILL: Se aggiungo in Possesso, riempio prima i buchi nei mazzi
+            if(finalStatus === 'Possesso' || finalStatus === 'Ordinata') {
+                targetDecks = resolveSmartFill(name, qty, targetDecks);
+            }
+
+            let existingIndex = collection.findIndex(c => c.name.toLowerCase() === name.toLowerCase() && c.status === finalStatus);
+            if (existingIndex !== -1) {
+                collection[existingIndex].qty += qty;
+                targetDecks.forEach(d => { if(!collection[existingIndex].decks.includes(d)) collection[existingIndex].decks.push(d); });
+                if (price > 0) collection[existingIndex].price = price; 
+                if (imgUrl) collection[existingIndex].imageUrl = imgUrl;
+                if (cmc !== undefined) collection[existingIndex].cmc = cmc;
+                if (colors) collection[existingIndex].color_identity = colors;
+                if (typeLine) collection[existingIndex].type_line = typeLine;
+                if (isCommander) collection[existingIndex].isCommander = true;
+                collection[existingIndex].primary_type = calcPrimaryType(collection[existingIndex].isCommander, collection[existingIndex].type_line);
+            } else {
+                collection.unshift({
+                    id: Date.now() + Math.random().toString(),
+                    name: name, qty: qty, price: price, status: finalStatus, decks: targetDecks,
+                    imageUrl: imgUrl || "", cmc: cmc || 0, color_identity: colors || [], type_line: typeLine || "", 
+                    isCommander: isCommander || false, primary_type: calcPrimaryType(isCommander, typeLine)
+                });
+            }
+        }
+
+        // --- IMPORTAZIONE ---
+        function normalizeName(str) {
+            return str.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
+        }
+
+        async function processBatchImport(parsedItems, targetDecks, targetStatus, progressBar, progressFill, btn) {
+            let uniqueNames = [...new Set(parsedItems.map(p => p.name))];
+            let scryfallData = {};
+            
+            for (let i = 0; i < uniqueNames.length; i += 75) {
+                let batch = uniqueNames.slice(i, i + 75);
+                let identifiers = batch.map(n => ({ name: n }));
+                try {
+                    let res = await fetch('https://api.scryfall.com/cards/collection', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ identifiers: identifiers })
+                    });
+                    let data = await res.json();
+                    if(data.data) {
+                        data.data.forEach(c => { scryfallData[normalizeName(c.name)] = c; });
+                    }
+                    progressFill.style.width = `${Math.min(((i + 75) / uniqueNames.length) * 100, 100)}%`;
+                } catch(e) {}
+            }
+
+            parsedItems.forEach(item => {
+                let normName = normalizeName(item.name);
+                let cardInfo = scryfallData[normName];
+                
+                let cName = item.name; 
+                let price = 0, imgUrl = "", cmc = 0, colors = [], typeLine = "";
+                
+                if(cardInfo) {
+                    cName = cardInfo.name;
+                    price = parseFloat(cardInfo.prices?.eur || cardInfo.prices?.eur_foil || 0);
+                    imgUrl = cardInfo.image_uris?.normal || (cardInfo.card_faces ? cardInfo.card_faces[0].image_uris?.normal : "");
+                    cmc = cardInfo.cmc || 0;
+                    colors = cardInfo.color_identity || [];
+                    typeLine = cardInfo.type_line || "";
+                }
+                
+                let finalStatus = checkProxyThreshold(price, targetStatus);
+                insertOrMergeCard(cName, item.qty, price, finalStatus, targetDecks, imgUrl, cmc, colors, typeLine, false);
+            });
+
+            saveData();
+            btn.disabled = false; btn.innerText = "Operazione Completata!";
+            setTimeout(() => { 
+                progressBar.classList.add('hidden'); progressFill.style.width = "0%"; 
+                btn.innerText = "Avvia Importazione Multipla";
+            }, 2000);
+            
+            showConfirm("Fatto!", `Importati ${parsedItems.length} lotti di carte. Vai al raccoglitore?`, () => { switchTab('binder'); });
+        }
+
+        window.importListText = async function() {
+            const text = document.getElementById('importText').value.trim();
+            if (!text) return showToast("Incolla una lista!");
+            
+            const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+            const targetDeckStr = document.getElementById('importDeck').value.trim();
+            const targetDecks = targetDeckStr ? targetDeckStr.split(',').map(s=>s.trim()).filter(Boolean) : [];
+            const targetStatus = document.getElementById('importStatus').value;
+            
+            const btn = document.getElementById('btnImport');
+            const progressContainer = document.getElementById('importProgressBar');
+            const progress = document.getElementById('importProgress');
+            
+            btn.disabled = true; btn.innerText = "Ricerca carte...";
+            progressContainer.classList.remove('hidden'); progress.style.width = "10%";
+
+            let parsedItems = [];
+            const regex = /^(\d+)[xX]?\s+(.+)$/;
+
+            for (let line of lines) {
+                if (line.startsWith('//') || line.toLowerCase().startsWith('sideboard')) continue;
+                let match = line.match(regex);
+                let qty = 1, cardName = line;
+                if (match) { qty = parseInt(match[1]); cardName = match[2].trim(); }
+                cardName = cardName.replace(/\s*\[.*?\]\s*\d*|\s*\(.*?\)\s*\d*/g, '').trim();
+                if(cardName) parsedItems.push({ name: cardName, qty: qty });
+            }
+
+            if(parsedItems.length === 0) { btn.disabled = false; btn.innerText = "Avvia Importazione Multipla"; return showToast("Nessuna carta valida trovata."); }
+            
+            document.getElementById('importText').value = '';
+            await processBatchImport(parsedItems, targetDecks, targetStatus, progressContainer, progress, btn);
+        };
+
+        window.importCSVFile = function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const targetDeckStr = document.getElementById('csvImportDeck').value.trim();
+            const targetDecks = targetDeckStr ? targetDeckStr.split(',').map(s=>s.trim()).filter(Boolean) : [];
+            const targetStatus = document.getElementById('csvImportStatus').value;
+            const progressContainer = document.getElementById('csvImportProgressBar');
+            const progress = document.getElementById('csvImportProgress');
+
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                progressContainer.classList.remove('hidden'); progress.style.width = "10%";
+                const text = e.target.result;
+                const lines = text.split('\n').filter(l => l.trim().length > 0);
+                if(lines.length < 2) return showToast("Il CSV sembra vuoto.");
+
+                function parseCSVLine(line) {
+                    let ret = [], inQuote = false, val = '';
+                    for (let i = 0; i < line.length; i++) {
+                        let c = line[i];
+                        if (inQuote) {
+                            if (c === '"' && line[i+1] === '"') { val += '"'; i++; }
+                            else if (c === '"') { inQuote = false; }
+                            else { val += c; }
+                        } else {
+                            if (c === '"') { inQuote = true; }
+                            else if (c === ',') { ret.push(val.trim()); val = ''; }
+                            else { val += c; }
+                        }
+                    }
+                    ret.push(val.trim());
+                    return ret;
+                }
+
+                let headers = parseCSVLine(lines[0]).map(h => h.toLowerCase());
+                let nameIdx = headers.findIndex(h => h.includes('name') || h === 'carta');
+                let qtyIdx = headers.findIndex(h => h.includes('count') || h.includes('quantity') || h.includes('qty'));
+
+                if(nameIdx === -1) {
+                    showToast("Formato CSV non riconosciuto: colonna Nome mancante.");
+                    progressContainer.classList.add('hidden');
+                    return;
+                }
+
+                let parsedItems = [];
+                for(let i = 1; i < lines.length; i++) {
+                    let row = parseCSVLine(lines[i]);
+                    if(row.length <= nameIdx || !row[nameIdx]) continue;
+                    let name = row[nameIdx];
+                    let qty = (qtyIdx !== -1 && row[qtyIdx]) ? parseInt(row[qtyIdx]) : 1;
+                    if(isNaN(qty)) qty = 1;
+                    parsedItems.push({ name: name, qty: qty });
+                }
+
+                document.getElementById('csvFileUpload').value = ''; 
+                let dummyBtn = { disabled: false, set innerText(v) {} };
+                await processBatchImport(parsedItems, targetDecks, targetStatus, progressContainer, progress, dummyBtn);
+            };
+            reader.readAsText(file);
+        };
+
+
+        // AUTOCOMPLETE API
+        function attachAutocomplete(inputId, listId, context) {
+            const input = document.getElementById(inputId);
+            const list = document.getElementById(listId);
+            
+            input.addEventListener('input', function() {
+                clearTimeout(debounceTimer);
+                let val = this.value; list.innerHTML = ''; list.classList.add('hidden');
+                if (!val || val.length < 3) return;
+                debounceTimer = setTimeout(async () => {
+                    try {
+                        let dataList;
+                        if(apiCache.autocomplete[val]) { dataList = apiCache.autocomplete[val]; } 
+                        else {
+                            let res = await fetch(`https://api.scryfall.com/cards/autocomplete?q=${encodeURIComponent(val)}`);
+                            let data = await res.json();
+                            dataList = data.data || [];
+                            apiCache.autocomplete[val] = dataList;
+                        }
+
+                        if (dataList && dataList.length > 0) {
+                            list.classList.remove('hidden');
+                            dataList.forEach(name => {
+                                let item = document.createElement('div'); item.innerText = name;
+                                item.onclick = () => selectCard(name, inputId, listId, context);
+                                list.appendChild(item);
+                            });
+                        }
+                    } catch (err) {}
+                }, 250);
+            });
+            document.addEventListener("click", e => { if (e.target !== input) list.classList.add('hidden'); });
+        }
+
+        async function selectCard(name, inputId, listId, context) {
+            document.getElementById(inputId).value = name;
+            document.getElementById(listId).classList.add('hidden');
+            try {
+                let card;
+                if(apiCache.details[name]) { card = apiCache.details[name]; } 
+                else {
+                    let res = await fetch(`https://api.scryfall.com/cards/named?exact=${encodeURIComponent(name)}`);
+                    card = await res.json();
+                    if(card && card.name) apiCache.details[name] = card;
+                }
+
+                if (card && card.name) {
+                    let p = card.prices.eur || card.prices.eur_foil || 0;
+                    let i = card.image_uris ? card.image_uris.normal : (card.card_faces ? card.card_faces[0].image_uris?.normal : "");
+                    let c = card.cmc || 0; let ci = JSON.stringify(card.color_identity || []); let tl = card.type_line || "";
+
+                    if (context === 'main') {
+                        document.getElementById('cardPrice').value = p; const img = document.getElementById('cardPreview');
+                        if (i) img.src = i;
+                        img.dataset.imgUrl = i; img.dataset.cmc = c; img.dataset.colors = ci; img.dataset.typeline = tl;
+                    } else if (context === 'inlineDeck') {
+                        document.getElementById('inlineAddPrice').value = p; document.getElementById('inlineAddImgUrl').value = i;
+                        document.getElementById('inlineAddCmc').value = c; document.getElementById('inlineAddColors').value = ci;
+                        document.getElementById('inlineAddTypeLine').value = tl;
+                    }
+                }
+            } catch (err) {}
+        }
+
+        attachAutocomplete('cardName', 'autocomplete-list', 'main');
+        attachAutocomplete('inlineAddName', 'inlineAddAutocomplete', 'inlineDeck');
+
+        window.addCard = function() {
+            let name = document.getElementById('cardName').value.trim();
+            if (!name) return showToast("Inserisci il nome!");
+            let qty = parseInt(document.getElementById('cardQty').value) || 1;
+            let pStatus = document.getElementById('cardStatus').value;
+            let price = parseFloat(document.getElementById('cardPrice').value) || 0;
+            let finalStatus = checkProxyThreshold(price, pStatus);
+            let deckStr = document.getElementById('cardDeck').value.trim();
+            let isCmd = document.getElementById('cardIsCommander').checked;
+            
+            const imgP = document.getElementById('cardPreview');
+            let cmc = parseFloat(imgP.dataset.cmc) || 0;
+            let col = JSON.parse(imgP.dataset.colors || "[]"); let tl = imgP.dataset.typeline || "";
+            
+            // BUG COMANDANTE RISOLTO: Se flaggato e campo vuoto, il mazzo è ESATTAMENTE il nome della carta intera
+            let targetDecks = [];
+            if (isCmd && !deckStr) {
+                targetDecks = [name];
+            } else if (deckStr) {
+                targetDecks = deckStr.split(',').map(s=>s.trim()).filter(Boolean);
+            }
+
+            insertOrMergeCard(name, qty, price, finalStatus, targetDecks, imgP.dataset.imgUrl, cmc, col, tl, isCmd);
+            saveData(); showToast("Carta aggiunta!");
+            
+            document.getElementById('cardName').value = ''; document.getElementById('cardPrice').value = ''; 
+            document.getElementById('cardQty').value = 1; document.getElementById('cardDeck').value = ''; 
+            document.getElementById('cardIsCommander').checked = false; imgP.src = 'https://via.placeholder.com/146x204?text=Anteprima';
+        };
+
+        window.inlineDeckSaveCard = function() {
+            if(!currentOpenDeck) return;
+            let name = document.getElementById('inlineAddName').value.trim();
+            if (!name) return showToast("Inserisci il nome!");
+            let qty = parseInt(document.getElementById('inlineAddQty').value) || 1;
+            let pStatus = document.getElementById('inlineAddStatus').value;
+            let price = parseFloat(document.getElementById('inlineAddPrice').value) || 0;
+            let finalStatus = checkProxyThreshold(price, pStatus);
+            let isCmd = document.getElementById('inlineAddIsCmd').checked;
+            
+            let img = document.getElementById('inlineAddImgUrl').value;
+            let cmc = parseFloat(document.getElementById('inlineAddCmc').value) || 0;
+            let col = JSON.parse(document.getElementById('inlineAddColors').value || "[]");
+            let tl = document.getElementById('inlineAddTypeLine').value || "";
+
+            insertOrMergeCard(name, qty, price, finalStatus, [currentOpenDeck], img, cmc, col, tl, isCmd);
+            saveData(); showToast("Aggiunta al mazzo!");
+            
+            document.getElementById('inlineAddName').value = ''; document.getElementById('inlineAddQty').value = 1;
+            document.getElementById('inlineAddPrice').value = ''; document.getElementById('inlineAddIsCmd').checked = false;
+        };
+
+        // --- BULK E ALTRE AZIONI ---
+        function toggleCardSelect(id, isChecked) {
+            if (isChecked) selectedCards.add(id); else selectedCards.delete(id);
+            updateBulkActionBar();
+            const allCb = document.querySelectorAll('.row-checkbox');
+            document.getElementById('selectAllCheckbox').checked = allCb.length > 0 && Array.from(allCb).every(cb => cb.checked);
+        }
+        window.toggleSelectAll = function() {
+            const m = document.getElementById('selectAllCheckbox').checked;
+            document.querySelectorAll('.row-checkbox').forEach(cb => {
+                cb.checked = m;
+                if (m) selectedCards.add(cb.dataset.id); else selectedCards.delete(cb.dataset.id);
+            });
+            updateBulkActionBar();
+        };
+        function updateBulkActionBar() {
+            const bar = document.getElementById('bulkActionsBar');
+            if (selectedCards.size > 0) { bar.classList.remove('hidden'); document.getElementById('bulkCount').innerText = selectedCards.size; } 
+            else { bar.classList.add('hidden'); }
+        }
+        window.applyBulkStatus = function() {
+            const s = document.getElementById('bulkStatusSelect').value;
+            if (!s) return;
+            collection.forEach(c => { if (selectedCards.has(c.id.toString())) c.status = s; });
+            showToast("Stati aggiornati"); saveData(); document.getElementById('bulkStatusSelect').value = '';
+        };
+        window.deleteSelected = function() {
+            showConfirm("Eliminazione", `Vuoi eliminare ${selectedCards.size} gruppi di carte?`, () => {
+                collection = collection.filter(c => !selectedCards.has(c.id.toString()));
+                showToast("Eliminate"); saveData();
+            });
+        };
+        window.updateSingleStatus = function(id, st) {
+            let i = collection.findIndex(c => c.id.toString() === id.toString());
+            if(i !== -1) { collection[i].status = st; saveData(); }
+        };
+        window.confirmDelete = function(id) {
+            showConfirm("Elimina Carta", "Sei sicuro?", () => {
+                collection = collection.filter(c => c.id.toString() !== id.toString()); saveData();
+            });
+        };
+        window.openEditDeckModal = function(id, name, currentDecks, isCommander) {
+            const modal = document.getElementById('editDeckModal');
+            document.getElementById('editDeckCardName').innerText = name;
+            document.getElementById('editDeckInput').value = currentDecks;
+            document.getElementById('editDeckIsCommander').checked = isCommander;
+            modal.classList.remove('hidden');
+            document.getElementById('btnSaveDeck').onclick = function() {
+                let dStr = document.getElementById('editDeckInput').value.trim();
+                let i = collection.findIndex(c => c.id.toString() === id.toString());
+                if(i !== -1) {
+                    collection[i].decks = dStr ? dStr.split(',').map(s=>s.trim()).filter(Boolean) : [];
+                    collection[i].isCommander = document.getElementById('editDeckIsCommander').checked;
+                    collection[i].primary_type = calcPrimaryType(collection[i].isCommander, collection[i].type_line);
+                    saveData(); showToast("Mazzi aggiornati");
+                }
+                modal.classList.add('hidden');
+            };
+        };
+
+        // ESPORTAZIONI
+        function getListText(statusList, deckName = null) {
+            let f = collection;
+            if (deckName) f = f.filter(c => c.decks.includes(deckName));
+            f = f.filter(c => statusList.includes(c.status));
+            let list = {};
+            f.forEach(c => { list[c.name] = (list[c.name] || 0) + c.qty; });
+            let t = ""; for (let [n, q] of Object.entries(list)) t += `${q} ${n}\n`;
+            return t;
+        }
+        window.exportDeckOrders = function(deck = null) {
+            let text = getListText(['Mancante', 'DaOrdinare', 'Ordinata'], deck);
+            if(!text) return showToast("Nessun mancante");
+            navigator.clipboard.writeText(text).then(() => showToast("Ordini copiati!"));
+        };
+        window.exportDeckMPC = function(deck = null) {
+            let text = getListText(['Proxy'], deck);
+            if(!text) return showToast("Nessuna proxy");
+            navigator.clipboard.writeText(text).then(() => showToast("Proxy copiate!"));
+        };
+        window.exportBackup = function() {
+            if(collection.length===0) return;
+            const link = document.createElement('a');
+            link.href = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(collection));
+            link.download = `backup_${new Date().toISOString().slice(0,10)}.json`; link.click();
+        };
+        window.importBackup = function(event) {
+            const f = event.target.files[0]; if (!f) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const imp = JSON.parse(e.target.result);
+                    if (Array.isArray(imp)) {
+                        collection = imp.map(c => {
+                            if (c.qty === undefined) c.qty = 1;
+                            if (c.decks === undefined) c.decks = c.deck ? [c.deck] : [];
+                            if (c.cmc === undefined) c.cmc = 0; if (c.color_identity === undefined) c.color_identity = [];
+                            return c;
+                        });
+                        saveData(); showToast("Ripristinato!");
+                    } else alert("File non valido");
+                } catch(err) { alert("Errore"); }
+            };
+            reader.readAsText(f);
+        };
+        window.exportExcel = function() {
+            let csv = "data:text/csv;charset=utf-8,\uFEFFQ.tà,Nome,Mazzi,Stato,PrezzoTot,PrezzoCad\n";
+            collection.forEach(c => {
+                let sName = c.name.replace(/"/g, '""');
+                csv += `"${c.qty}","${sName}","${c.decks.join(', ')}","${c.status}","${(c.price*c.qty).toFixed(2).replace('.',',')}","${c.price.toFixed(2).replace('.',',')}"\n`;
+            });
+            const link = document.createElement("a"); link.href = encodeURI(csv);
+            link.download = `Collezione.csv`; link.click();
+        };
+
+        loadPrefs(); loadData(); switchTab('home'); // init setup
+    </script>
+</body>
+</html>
